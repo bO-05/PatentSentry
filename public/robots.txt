@@ -1,0 +1,17 @@
+# PatentSentry robots.txt
+# Allows search engines to index the site
+
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /*.env
+
+# Specific crawl delay settings
+User-agent: Googlebot
+Crawl-delay: 0
+
+User-agent: Bingbot
+Crawl-delay: 1
+
+# Sitemap location
+Sitemap: https://patentsentry.com/sitemap.xml
