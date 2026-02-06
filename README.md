@@ -98,7 +98,7 @@ npm run dev
 
 ## 🧠 Action Era Architecture
 
-PatentSentry implements **multi-step AI orchestration** aligned with the Gemini 3 Hackathon's [Action Era criteria](https://gemini3hackathon.devpost.com/):
+PatentSentry implements **multi-step AI orchestration** aligned with the Gemini 3 Hackathon's [Action Era criteria](https://gemini3.devpost.com/):
 
 ### 3-Step Analysis Pipeline
 
