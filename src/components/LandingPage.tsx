@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Scale, ArrowRight, GitBranch, Brain, Search, Github, Twitter, Command } from 'lucide-react';
+import { ArrowRight, GitBranch, Brain, Search, Github, Twitter, Command } from 'lucide-react';
 
 interface LandingPageProps {
   onEnterApp: () => void;
@@ -78,7 +78,7 @@ export default function LandingPage({ onEnterApp, onSearch }: LandingPageProps) 
         <div className="max-w-5xl mx-auto text-center z-10">
           <div className="mb-8 animate-fade-in">
             <div className="inline-flex items-center gap-3 mb-6 px-5 py-2.5 bg-white/80 backdrop-blur-sm rounded-full border border-blue-100 shadow-sm">
-              <Scale className="w-5 h-5 text-blue-600" />
+              <img src="/favicon-32x32.png" alt="PatentSentry" className="w-5 h-5" />
               <span className="text-sm font-semibold text-blue-900">PatentSentry</span>
             </div>
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-gray-900 leading-tight mb-6 tracking-tight">

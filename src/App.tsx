@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Scale, AlertCircle, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Search, Clock, ArrowUpCircle, LayoutDashboard, Download, RefreshCw, X, Keyboard, Github, Twitter, Map } from 'lucide-react';
+import { AlertCircle, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Search, Clock, ArrowUpCircle, LayoutDashboard, Download, RefreshCw, X, Keyboard, Github, Twitter, Map } from 'lucide-react';
 import SearchBar, { SearchBarHandle } from './components/SearchBar';
 import PatentCard from './components/PatentCard';
 import PatentTimeline from './components/PatentTimeline';
@@ -559,7 +559,7 @@ function App() {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 cursor-pointer" onClick={() => setViewState('search')}>
-              <Scale className="w-8 h-8 text-blue-600" />
+              <img src="/favicon-96x96.png" alt="PatentSentry" className="w-8 h-8" />
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">PatentSentry</h1>
                 <p className="text-sm text-gray-600">🇺🇸 US Patents Only • USPTO PatentsView</p>
@@ -623,7 +623,7 @@ function App() {
             <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
               <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                 <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                  <Scale className="w-5 h-5 text-blue-600" />
+                  <img src="/favicon-32x32.png" alt="" className="w-5 h-5" />
                   Quick Analyze Patent
                 </h3>
                 <p className="text-sm text-gray-600 mb-3">Enter a US patent number to analyze</p>
