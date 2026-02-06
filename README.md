@@ -93,7 +93,7 @@ npm run dev
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS
 - **Backend**: Supabase Edge Functions (Deno)
 - **Database**: Supabase PostgreSQL
-- **APIs**: USPTO PatentsView, Exa AI, Google Gemini API
+- **APIs**: USPTO PatentsView, Exa AI, Google Gemini API, Firecrawl
 - **Local Dev**: Optional FastAPI backend
 
 ## 🧠 Action Era Architecture
@@ -163,6 +163,7 @@ Each step builds on the previous output, demonstrating **chained reasoning** rat
 | PatentsView | [Request here](https://patentsview-support.atlassian.net/servicedesk/customer/portal/1) | Yes |
 | Exa AI | [exa.ai](https://exa.ai/) | For enrichment |
 | Gemini | [Google AI Studio](https://aistudio.google.com/) | For AI analysis |
+| Firecrawl | [firecrawl.dev](https://firecrawl.dev/) | For patent content scraping |
 
 ## Security Notes
 
