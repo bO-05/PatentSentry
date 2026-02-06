@@ -11,10 +11,32 @@ export function setApiAuthToken(token: string | null): void {
   authToken = token;
 }
 
-function buildHeaders(useAuth: boolean = false): Record<string, string> {
+// Import supabase lazily to avoid circular dependency
+async function getSupabaseSession(): Promise<string | null> {
+  try {
+    const { supabase } = await import('./supabase');
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function buildHeaders(useAuth: boolean = false): Promise<Record<string, string>> {
+  console.log('[API Auth] buildHeaders called, useAuth:', useAuth, 'cachedToken:', authToken ? 'PRESENT' : 'NULL');
+
   // For public endpoints (search, analyze), always use anon key
-  // For user-specific endpoints (watchlist, portfolio), use user JWT if available
-  const token = useAuth && authToken ? authToken : ANON_KEY;
+  // For user-specific endpoints (watchlist, portfolio), fetch fresh session token
+  let token = ANON_KEY;
+
+  if (useAuth) {
+    // Always fetch fresh session to avoid stale token issues after login
+    const freshToken = await getSupabaseSession();
+    console.log('[API Auth] freshToken from getSession:', freshToken ? 'GOT_TOKEN' : 'NO_TOKEN');
+    token = freshToken ?? authToken ?? ANON_KEY;
+    console.log('[API Auth] Final token decision:', token === ANON_KEY ? 'USING_ANON' : 'USING_USER_TOKEN');
+  }
+
   return {
     'Content-Type': 'application/json',
     'apikey': ANON_KEY,
@@ -23,9 +45,10 @@ function buildHeaders(useAuth: boolean = false): Record<string, string> {
 }
 
 // Request timeout configuration
+// AI operations use 60s to accommodate 3-step Gemini pipeline
 const TIMEOUTS = {
   search: 15000,
-  analyze: 20000,
+  analyze: 60000,  // 60s for 3-step AI pipeline (Extract → Analyze → Synthesize)
   enrich: 10000,
   default: 15000,
 } as const;
@@ -77,7 +100,46 @@ function cancelRequest(key: string): void {
 }
 
 /**
- * Core API call with timeout, cancellation, and error handling
+ * Transform API errors into user-friendly messages
+ */
+function getUserFriendlyError(status: number, errorBody: string): string {
+  // Parse error body if JSON
+  let parsed: { error?: string; suggestion?: string; patent_id?: string } = {};
+  try {
+    parsed = JSON.parse(errorBody);
+  } catch {
+    // Not JSON, use raw text
+  }
+
+  switch (status) {
+    case 401:
+      return 'Sign in required. Please log in to access this feature.';
+    case 403:
+      return 'Access denied. You may not have permission for this action.';
+    case 404:
+      // Check if this is a patent not found error
+      if (parsed.error?.includes('Patent not found') || parsed.error?.includes('not found')) {
+        const patentId = parsed.patent_id || 'this patent';
+        return `Patent not found: ${patentId}. This might be a patent application (not yet granted) or the number may be incorrect. Only granted US patents are available.`;
+      }
+      return 'Not found. The requested resource does not exist.';
+    case 429:
+      return 'Too many requests. Please wait a moment and try again.';
+    case 500:
+    case 502:
+    case 503:
+      return 'Server error. Our systems are experiencing issues. Please try again in a few moments.';
+    default:
+      // If we have a parsed error message, show it nicely
+      if (parsed.error) {
+        return parsed.error;
+      }
+      return `Request failed (${status}). Please try again.`;
+  }
+}
+
+/**
+ * Core API call with timeout, cancellation, and user-friendly error handling
  */
 async function apiCall<T>(
   body: Record<string, unknown>,
@@ -103,22 +165,29 @@ async function apiCall<T>(
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
+    const headers = await buildHeaders(useAuth);
     const response = await fetch(API_BASE, {
       method: 'POST',
-      headers: buildHeaders(useAuth),
+      headers,
       body: JSON.stringify(body),
       signal: controller.signal,
     });
 
     if (!response.ok) {
       const errorBody = await response.text();
-      throw new Error(`API error: ${response.status} - ${errorBody}`);
+      throw new Error(getUserFriendlyError(response.status, errorBody));
     }
 
     return response.json();
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Request timed out. Please try again.');
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Request timed out. The server is taking too long to respond. Please try again.');
+      }
+      // Network errors
+      if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        throw new Error('Connection failed. Please check your internet and try again.');
+      }
     }
     throw error;
   } finally {
@@ -277,7 +346,7 @@ export async function analyzePatent(
         }).then(freshData => {
           analysisCache.set(cacheKey, { data: freshData, timestamp: Date.now() });
           onRefresh(freshData);
-        }).catch(() => {});
+        }).catch(() => { });
       }
       return cached.data;
     }
@@ -501,7 +570,7 @@ export function prefetchEnrichment(
   if (pendingEnrichments.has(cacheKey)) return;
 
   // Fire and forget - errors are silently ignored for prefetch
-  getPatentEnrichment(patentId, patentTitle, assignee, false).catch(() => {});
+  getPatentEnrichment(patentId, patentTitle, assignee, false).catch(() => { });
 }
 
 export async function getPatentEnrichment(
@@ -536,7 +605,7 @@ export async function getPatentEnrichment(
           ).then(freshData => {
             enrichmentCache.set(cacheKey, { data: freshData, timestamp: Date.now() });
             onRefresh(freshData);
-          }).catch(() => {});
+          }).catch(() => { });
         }
         return { ...cached.data, from_cache: true };
       }
@@ -631,5 +700,807 @@ export async function getAssigneePatents(
   });
 
   pendingRelated.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+// ============================================================================
+// Gemini 3 AI Analysis - Patent Intelligence
+// ============================================================================
+
+export interface AIAnalysisResult {
+  patent_id: string;
+  analysis_type: 'full';
+  powered_by: 'Gemini 3';
+  claims_summary: string;
+  technical_scope: string;
+  key_innovations: string[];
+  potential_applications: string[];
+  fto_considerations: string;
+  competitive_landscape: string;
+  generated_at: string;
+  available?: boolean;
+  reason?: string;
+  error?: string;
+}
+
+// Cache for AI analysis results (longer TTL since AI analysis is expensive)
+const aiAnalysisCache = new Map<string, { data: AIAnalysisResult; timestamp: number }>();
+const pendingAIAnalysis = new Map<string, Promise<AIAnalysisResult>>();
+const AI_ANALYSIS_CACHE_TTL = 600000; // 10 minutes
+
+/**
+ * Get AI-powered patent analysis using Gemini 3
+ * On-demand analysis with caching and request deduplication
+ */
+export async function getAIPatentAnalysis(
+  patentId: string,
+  patentTitle: string,
+  patentAbstract: string,
+  options?: {
+    assignee?: string;
+    filingDate?: string;
+    expirationDate?: string;
+    forceRefresh?: boolean;
+  }
+): Promise<AIAnalysisResult> {
+  const cacheKey = `ai:${patentId}`;
+
+  // Check cache first (unless force refresh)
+  if (!options?.forceRefresh) {
+    const cached = aiAnalysisCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < AI_ANALYSIS_CACHE_TTL) {
+      return cached.data;
+    }
+
+    // Check for pending request (deduplication)
+    const pending = pendingAIAnalysis.get(cacheKey);
+    if (pending) {
+      return pending;
+    }
+  }
+
+  // Make API call with extended timeout for AI processing
+  const fetchPromise = apiCall<AIAnalysisResult>(
+    {
+      action: 'ai_analyze',
+      patent_id: patentId,
+      patent_title: patentTitle,
+      patent_abstract: patentAbstract,
+      assignee: options?.assignee,
+      filing_date: options?.filingDate,
+      expiration_date: options?.expirationDate,
+    },
+    {
+      timeoutKey: 'analyze', // Uses 20s timeout
+      cancellationKey: `ai_analyze:${patentId}`,
+    }
+  ).then(data => {
+    // Only cache successful responses (not errors or unavailable states)
+    if (data.available !== false) {
+      aiAnalysisCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    pendingAIAnalysis.delete(cacheKey);
+    return data;
+  }).catch(err => {
+    pendingAIAnalysis.delete(cacheKey);
+    throw err;
+  });
+
+  pendingAIAnalysis.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+/**
+ * Prefetch AI analysis on hover - improves perceived speed
+ * Triggers background fetch so data is cached when user clicks
+ * Fire-and-forget: doesn't block or throw
+ */
+export function prefetchAIAnalysis(
+  patentId: string,
+  patentTitle: string,
+  patentAbstract: string,
+  options?: {
+    assignee?: string;
+    filingDate?: string;
+    expirationDate?: string;
+  }
+): void {
+  const cacheKey = `ai:${patentId}`;
+
+  // Skip if already cached or pending
+  const cached = aiAnalysisCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < AI_ANALYSIS_CACHE_TTL) {
+    return;
+  }
+  if (pendingAIAnalysis.has(cacheKey)) {
+    return;
+  }
+
+  // Fire-and-forget prefetch
+  getAIPatentAnalysis(patentId, patentTitle, patentAbstract, options)
+    .catch(() => {
+      // Silently ignore prefetch errors
+    });
+}
+
+// ============================================================
+// AI Patent Comparison - Multi-step AI orchestration
+// ============================================================
+
+export interface AICompareResult {
+  comparison_type: "multi_patent";
+  powered_by: "Gemini 3";
+  patent_ids: string[];
+  overlap_analysis: string;
+  differentiation_matrix: Array<{
+    patent_id: string;
+    unique_aspects: string[];
+    shared_with: string[];
+  }>;
+  fto_summary: string;
+  recommendation: string;
+  generated_at: string;
+  available?: boolean;
+  reason?: string;
+  error?: string;
+}
+
+// Cache for AI comparison results
+const aiCompareCache = new Map<string, { data: AICompareResult; timestamp: number }>();
+const pendingAICompare = new Map<string, Promise<AICompareResult>>();
+const AI_COMPARE_CACHE_TTL = 600000; // 10 minutes
+
+/**
+ * Get AI-powered patent comparison using Gemini 3
+ * Compares multiple patents for overlaps, differences, and FTO implications
+ */
+export async function getAIPatentComparison(
+  patents: Array<{
+    patent_id: string;
+    patent_title: string;
+    patent_abstract: string;
+    assignee?: string;
+  }>
+): Promise<AICompareResult> {
+  // Create deterministic cache key from sorted patent IDs
+  const sortedIds = patents.map(p => p.patent_id).sort();
+  const cacheKey = `compare:${sortedIds.join(":")}`;
+
+  // Check cache
+  const cached = aiCompareCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < AI_COMPARE_CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Check for pending request (deduplication)
+  const pending = pendingAICompare.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  // Make API call
+  const fetchPromise = apiCall<AICompareResult>(
+    {
+      action: 'ai_compare',
+      patents,
+    },
+    {
+      timeoutKey: 'analyze', // Uses 60s timeout for AI operations
+      cancellationKey: `ai_compare:${cacheKey}`,
+    }
+  ).then(data => {
+    // Only cache successful responses
+    if (data.available !== false) {
+      aiCompareCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    pendingAICompare.delete(cacheKey);
+    return data;
+  }).catch(err => {
+    pendingAICompare.delete(cacheKey);
+    throw err;
+  });
+
+  pendingAICompare.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+// ============================================================
+// AI Query Expansion - Expand search queries for better discovery
+// ============================================================
+
+export interface QueryExpandResult {
+  original_query: string;
+  expanded_terms: string[];
+  technical_synonyms: string[];
+  suggested_cpc_codes: string[];
+  reasoning: string;
+  generated_at: string;
+}
+
+// Cache for query expansion results (shorter TTL)
+const queryExpandCache = new Map<string, { data: QueryExpandResult; timestamp: number }>();
+const QUERY_EXPAND_CACHE_TTL = 300000; // 5 minutes
+
+/**
+ * Expand search query using Gemini 3 for better patent discovery
+ * Returns technical synonyms, related terms, and CPC codes
+ */
+export async function expandSearchQuery(query: string): Promise<QueryExpandResult> {
+  const normalizedQuery = query.toLowerCase().trim();
+  const cacheKey = `expand:${normalizedQuery}`;
+
+  // Check cache
+  const cached = queryExpandCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < QUERY_EXPAND_CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Make API call with search timeout (AI expansion shouldn't block search)
+  const data = await apiCall<QueryExpandResult>(
+    {
+      action: 'query_expand',
+      query,
+    },
+    {
+      timeoutKey: 'search', // Uses 15s timeout
+    }
+  );
+
+  queryExpandCache.set(cacheKey, { data, timestamp: Date.now() });
+  return data;
+}
+
+// ============================================================
+// AI Claim Graph - Patent claim dependency visualization
+// ============================================================
+
+export interface ClaimGraphResult {
+  patent_id: string;
+  powered_by: "Gemini 3";
+  claims: Array<{
+    claim_id: number;
+    type: "independent" | "dependent";
+    depends_on: number[];
+    essence: string;
+    key_elements: string[];
+  }>;
+  generated_at: string;
+  available?: boolean;
+  reason?: string;
+  error?: string;
+}
+
+const claimGraphCache = new Map<string, { data: ClaimGraphResult; timestamp: number }>();
+const pendingClaimGraph = new Map<string, Promise<ClaimGraphResult>>();
+const CLAIM_GRAPH_CACHE_TTL = 600000; // 10 minutes
+
+export async function getClaimGraph(
+  patentId: string,
+  patentTitle: string,
+  patentAbstract: string,
+  claimsText?: string
+): Promise<ClaimGraphResult> {
+  const cacheKey = `claimgraph:${patentId}`;
+
+  // Check cache
+  const cached = claimGraphCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CLAIM_GRAPH_CACHE_TTL) {
+    return cached.data;
+  }
+
+  // Check for pending request (deduplication)
+  const pending = pendingClaimGraph.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  const fetchPromise = apiCall<ClaimGraphResult>(
+    {
+      action: 'ai_claim_graph',
+      patent_id: patentId,
+      patent_title: patentTitle,
+      patent_abstract: patentAbstract,
+      claims_text: claimsText,
+    },
+    {
+      timeoutKey: 'analyze',
+      cancellationKey: `claim_graph:${patentId}`,
+    }
+  ).then(data => {
+    // Only cache successful responses (not errors or unavailable states)
+    if (data.available !== false) {
+      claimGraphCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    pendingClaimGraph.delete(cacheKey);
+    return data;
+  }).catch(err => {
+    pendingClaimGraph.delete(cacheKey);
+    throw err;
+  });
+
+  pendingClaimGraph.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+export function prefetchClaimGraph(
+  patentId: string,
+  patentTitle: string,
+  patentAbstract: string,
+  claimsText?: string
+): void {
+  const cacheKey = `claimgraph:${patentId}`;
+
+  const cached = claimGraphCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CLAIM_GRAPH_CACHE_TTL) {
+    return;
+  }
+  if (pendingClaimGraph.has(cacheKey)) {
+    return;
+  }
+
+  getClaimGraph(patentId, patentTitle, patentAbstract, claimsText)
+    .catch(() => {
+      // Silently ignore prefetch errors
+    });
+}
+
+// ============================================================
+// Inventor Network - Collaboration graph analysis
+// ============================================================
+
+export interface InventorNetworkResult {
+  nodes: Array<{
+    id: string;
+    name: string;
+    patent_count: number;
+    primary_assignee?: string;
+    expertise_areas: string[];
+  }>;
+  edges: Array<{
+    source: string;
+    target: string;
+    weight: number;
+    patents: string[];
+  }>;
+  clusters: Array<{
+    id: string;
+    inventors: string[];
+    common_assignee?: string;
+    focus_area: string;
+  }>;
+  stats: {
+    total_inventors: number;
+    total_collaborations: number;
+    most_connected_inventor: string;
+  };
+  available?: boolean;
+  error?: string;
+}
+
+const inventorNetworkCache = new Map<string, { data: InventorNetworkResult; timestamp: number }>();
+const pendingInventorNetwork = new Map<string, Promise<InventorNetworkResult>>();
+const INVENTOR_NETWORK_CACHE_TTL = 600000; // 10 minutes
+
+export async function getInventorNetwork(options: {
+  inventorName?: string;
+  assignee?: string;
+  patentIds?: string[];
+  limit?: number;
+}): Promise<InventorNetworkResult> {
+  const keyParts = [
+    options.inventorName || '',
+    options.assignee || '',
+    (options.patentIds || []).sort().join(','),
+    String(options.limit || 50),
+  ];
+  const cacheKey = `inventor_network:${keyParts.join(':')}`;
+
+  const cached = inventorNetworkCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < INVENTOR_NETWORK_CACHE_TTL) {
+    return cached.data;
+  }
+
+  const pending = pendingInventorNetwork.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  const fetchPromise = apiCall<InventorNetworkResult>(
+    {
+      action: 'inventor_network',
+      inventor_name: options.inventorName,
+      assignee: options.assignee,
+      patent_ids: options.patentIds,
+      limit: options.limit,
+    },
+    {
+      timeoutKey: 'analyze',
+      cancellationKey: `inventor_network:${cacheKey}`,
+    }
+  ).then(data => {
+    // Only cache successful responses
+    if (data.available !== false) {
+      inventorNetworkCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    pendingInventorNetwork.delete(cacheKey);
+    return data;
+  }).catch(err => {
+    pendingInventorNetwork.delete(cacheKey);
+    throw err;
+  });
+
+  pendingInventorNetwork.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+// ============================================================
+// AI FTO Risk Analysis - Freedom to Operate Analysis
+// ============================================================
+
+export interface FTOAnalysisResult {
+  powered_by: "Gemini 3";
+  product_summary: string;
+  overall_risk: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  patent_risks: Array<{
+    patent_id: string;
+    risk_level: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+    overlapping_elements: string[];
+    non_overlapping_elements: string[];
+    design_around_suggestions: string[];
+    confidence: number;
+  }>;
+  strategic_recommendations: string[];
+  generated_at: string;
+  available?: boolean;
+  error?: string;
+}
+
+const ftoAnalysisCache = new Map<string, { data: FTOAnalysisResult; timestamp: number }>();
+const pendingFTOAnalysis = new Map<string, Promise<FTOAnalysisResult>>();
+const FTO_ANALYSIS_CACHE_TTL = 600000; // 10 minutes
+
+export async function analyzeFTORisk(
+  productDescription: string,
+  patents: Array<{ patent_id: string; patent_title: string; patent_abstract: string; claims_text?: string }>
+): Promise<FTOAnalysisResult> {
+  const sortedIds = patents.map(p => p.patent_id).sort();
+  const descHash = productDescription.slice(0, 100).replace(/\s+/g, '_');
+  const cacheKey = `fto:${descHash}:${sortedIds.join(":")}`;
+
+  const cached = ftoAnalysisCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < FTO_ANALYSIS_CACHE_TTL) {
+    return cached.data;
+  }
+
+  const pending = pendingFTOAnalysis.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  const fetchPromise = apiCall<FTOAnalysisResult>(
+    {
+      action: 'ai_fto_analyze',
+      product_description: productDescription,
+      patents,
+    },
+    {
+      timeoutKey: 'analyze',
+      cancellationKey: `fto_analysis:${cacheKey}`,
+    }
+  ).then(data => {
+    // Only cache successful responses
+    if (data.available !== false) {
+      ftoAnalysisCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    pendingFTOAnalysis.delete(cacheKey);
+    return data;
+  }).catch(err => {
+    pendingFTOAnalysis.delete(cacheKey);
+    throw err;
+  });
+
+  pendingFTOAnalysis.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+// ============================================================
+// AI Prior Art Discovery - Find prior art for a patent
+// ============================================================
+
+export interface PriorArtResult {
+  powered_by: "Gemini 3";
+  target_patent: string;
+  key_concepts: string[];
+  search_strategy: { keywords: string[]; cpc_codes: string[]; date_range: { before: string } };
+  prior_art_candidates: Array<{
+    patent_id: string;
+    patent_title: string;
+    relevance_score: number;
+    overlap_summary: string;
+    key_matching_elements: string[];
+  }>;
+  analysis_summary: string;
+  generated_at: string;
+  available?: boolean;
+  error?: string;
+}
+
+const priorArtCache = new Map<string, { data: PriorArtResult; timestamp: number }>();
+const pendingPriorArt = new Map<string, Promise<PriorArtResult>>();
+const PRIOR_ART_CACHE_TTL = 600000; // 10 minutes
+
+export async function discoverPriorArt(
+  patentId: string,
+  patentTitle: string,
+  patentAbstract: string,
+  filingDate?: string,
+  claimsText?: string
+): Promise<PriorArtResult> {
+  const cacheKey = `prior_art:${patentId}`;
+
+  const cached = priorArtCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < PRIOR_ART_CACHE_TTL) {
+    return cached.data;
+  }
+
+  const pending = pendingPriorArt.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  const fetchPromise = apiCall<PriorArtResult>(
+    {
+      action: 'ai_prior_art',
+      patent_id: patentId,
+      patent_title: patentTitle,
+      patent_abstract: patentAbstract,
+      filing_date: filingDate,
+      claims_text: claimsText,
+    },
+    {
+      timeoutKey: 'analyze',
+      cancellationKey: `prior_art:${patentId}`,
+    }
+  ).then(data => {
+    // Only cache successful responses (not errors or unavailable states)
+    if (data.available !== false) {
+      priorArtCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    pendingPriorArt.delete(cacheKey);
+    return data;
+  }).catch(err => {
+    pendingPriorArt.delete(cacheKey);
+    throw err;
+  });
+
+  pendingPriorArt.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+// ============================================================
+// Portfolio Valuation - AI-powered patent portfolio scoring
+// ============================================================
+
+export interface PortfolioValueResult {
+  powered_by: "Gemini 3";
+  portfolio_summary: {
+    total_patents: number;
+    average_score: number;
+    highest_value_patent: string;
+    portfolio_strength: "WEAK" | "MODERATE" | "STRONG" | "EXCEPTIONAL";
+  };
+  patent_scores: Array<{
+    patent_id: string;
+    overall_score: number;
+    innovation_score: number;
+    market_relevance_score: number;
+    remaining_life_score: number;
+    claim_breadth_score: number;
+    value_drivers: string[];
+    risks: string[];
+  }>;
+  strategic_insights: string[];
+  generated_at: string;
+  available?: boolean;
+  error?: string;
+}
+
+const portfolioValueCache = new Map<string, { data: PortfolioValueResult; timestamp: number }>();
+const pendingPortfolioValue = new Map<string, Promise<PortfolioValueResult>>();
+const PORTFOLIO_VALUE_CACHE_TTL = 600000; // 10 minutes
+
+export async function getPortfolioValuation(
+  patents: Array<{
+    patent_id: string;
+    patent_title: string;
+    patent_abstract: string;
+    filing_date?: string;
+    expiration_date?: string;
+    assignee?: string;
+    citation_count?: number;
+  }>
+): Promise<PortfolioValueResult> {
+  const sortedIds = patents.map(p => p.patent_id).sort();
+  const cacheKey = `portfolio_value:${sortedIds.join(":")}`;
+
+  const cached = portfolioValueCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < PORTFOLIO_VALUE_CACHE_TTL) {
+    return cached.data;
+  }
+
+  const pending = pendingPortfolioValue.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  const fetchPromise = apiCall<PortfolioValueResult>(
+    {
+      action: 'ai_portfolio_value',
+      patents,
+    },
+    {
+      timeoutKey: 'analyze',
+      cancellationKey: `portfolio_valuation:${cacheKey}`,
+    }
+  ).then(data => {
+    // Only cache successful responses
+    if (data.available !== false) {
+      portfolioValueCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    pendingPortfolioValue.delete(cacheKey);
+    return data;
+  }).catch(err => {
+    pendingPortfolioValue.delete(cacheKey);
+    throw err;
+  });
+
+  pendingPortfolioValue.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+// ============================================================
+// Patent Landscape Analysis - Market overview and competitive landscape
+// ============================================================
+
+export interface LandscapeResult {
+  powered_by: "Gemini 3";
+  query: string;
+  analysis_date: string;
+  market_overview: string;
+  top_assignees: Array<{
+    name: string;
+    patent_count: number;
+    focus_areas: string[];
+    trend: "growing" | "stable" | "declining";
+  }>;
+  technology_clusters: Array<{
+    name: string;
+    description: string;
+    key_patents: string[];
+    maturity: "emerging" | "growing" | "mature" | "declining";
+  }>;
+  filing_trends: {
+    overall_trend: "increasing" | "stable" | "decreasing";
+    peak_year?: string;
+    insight: string;
+  };
+  white_space_opportunities: string[];
+  key_takeaways: string[];
+  generated_at: string;
+  available?: boolean;
+  error?: string;
+}
+
+const landscapeCache = new Map<string, { data: LandscapeResult; timestamp: number }>();
+const pendingLandscape = new Map<string, Promise<LandscapeResult>>();
+const LANDSCAPE_CACHE_TTL = 600000; // 10 minutes
+
+export async function analyzeLandscape(
+  query: string,
+  patents: Array<{ patent_id: string; patent_title: string; patent_abstract: string; assignee?: string; filing_date?: string }>
+): Promise<LandscapeResult> {
+  const sortedIds = patents.map(p => p.patent_id).sort();
+  const queryHash = query.slice(0, 50).replace(/\s+/g, '_');
+  const cacheKey = `landscape:${queryHash}:${sortedIds.join(":")}`;
+
+  const cached = landscapeCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < LANDSCAPE_CACHE_TTL) {
+    return cached.data;
+  }
+
+  const pending = pendingLandscape.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  const fetchPromise = apiCall<LandscapeResult>(
+    {
+      action: 'ai_landscape',
+      query,
+      patents,
+    },
+    {
+      timeoutKey: 'analyze',
+      cancellationKey: `landscape_analysis:${cacheKey}`,
+    }
+  ).then(data => {
+    // Only cache successful responses
+    if (data.available !== false) {
+      landscapeCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    pendingLandscape.delete(cacheKey);
+    return data;
+  }).catch(err => {
+    pendingLandscape.delete(cacheKey);
+    throw err;
+  });
+
+  pendingLandscape.set(cacheKey, fetchPromise);
+  return fetchPromise;
+}
+
+// ============================================================
+// Firecrawl Patent Content Scraping
+// ============================================================
+
+export interface FirecrawlResult {
+  success: boolean;
+  patent_id: string;
+  markdown?: string;
+  metadata?: {
+    title?: string;
+    description?: string;
+    sourceURL?: string;
+  };
+  fetched_at?: string;
+  available?: boolean;
+  error?: string;
+}
+
+const firecrawlCache = new Map<string, { data: FirecrawlResult; timestamp: number }>();
+const pendingFirecrawl = new Map<string, Promise<FirecrawlResult>>();
+const FIRECRAWL_CACHE_TTL = 3600000; // 1 hour (patent content is stable)
+
+/**
+ * Get full patent content via Firecrawl markdown scraping
+ * Uses 8-key round-robin rotation on backend for rate limit bypass
+ */
+export async function getPatentContent(patentId: string): Promise<FirecrawlResult> {
+  const cacheKey = `firecrawl:${patentId}`;
+
+  // Check cache
+  const cached = firecrawlCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < FIRECRAWL_CACHE_TTL) {
+    return { ...cached.data, from_cache: true } as FirecrawlResult & { from_cache: boolean };
+  }
+
+  // Check for pending request
+  const pending = pendingFirecrawl.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  const fetchPromise = apiCall<FirecrawlResult>(
+    {
+      action: 'firecrawl_scrape',
+      patent_id: patentId,
+    },
+    {
+      timeoutKey: 'analyze', // Longer timeout for scraping
+      cancellationKey: `firecrawl:${patentId}`,
+    }
+  ).then(data => {
+    // Only cache successful responses
+    if (data.success && data.available !== false) {
+      firecrawlCache.set(cacheKey, { data, timestamp: Date.now() });
+    }
+    pendingFirecrawl.delete(cacheKey);
+    return data;
+  }).catch(err => {
+    pendingFirecrawl.delete(cacheKey);
+    throw err;
+  });
+
+  pendingFirecrawl.set(cacheKey, fetchPromise);
   return fetchPromise;
 }

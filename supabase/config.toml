@@ -1,0 +1,2 @@
+[functions.patent-search]
+verify_jwt = false

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Scale, AlertCircle, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Search, Clock, ArrowUpCircle, LayoutDashboard, Download, RefreshCw, X, Keyboard, Github, Twitter } from 'lucide-react';
+import { Scale, AlertCircle, ChevronLeft, ChevronRight, ArrowUpDown, Filter, Search, Clock, ArrowUpCircle, LayoutDashboard, Download, RefreshCw, X, Keyboard, Github, Twitter, Map } from 'lucide-react';
 import SearchBar, { SearchBarHandle } from './components/SearchBar';
 import PatentCard from './components/PatentCard';
 import PatentTimeline from './components/PatentTimeline';
@@ -7,6 +7,8 @@ import LandingPage from './components/LandingPage';
 import FilingTrendsChart from './components/FilingTrendsChart';
 import Dashboard from './components/Dashboard';
 import PatentComparison from './components/PatentComparison';
+import QuickLookupModal from './components/QuickLookupModal';
+import PatentLandscape from './components/PatentLandscape';
 import AuthModal from './components/AuthModal';
 import UserMenu from './components/UserMenu';
 import { PatentCardSkeletonList, AnalysisSkeleton } from './components/Skeleton';
@@ -57,6 +59,8 @@ function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [activeResultIndex, setActiveResultIndex] = useState<number>(-1);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [showQuickLookup, setShowQuickLookup] = useState(false);
+  const [showLandscape, setShowLandscape] = useState(false);
 
   const { user } = useAuth();
   const { addToast, updateToast } = useToast();
@@ -68,13 +72,15 @@ function App() {
 
   useEffect(() => {
     loadRecentSearches();
-    loadPortfolios();
+    if (user) {
+      loadPortfolios();
+    }
     const handleScroll = () => {
       setShowScrollTop(window.scrollY > 400);
     };
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     if (viewState !== 'landing' && viewState !== 'dashboard') {
@@ -121,6 +127,10 @@ function App() {
       const isInputFocused = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
 
       if (e.key === 'Escape') {
+        if (showQuickLookup) {
+          setShowQuickLookup(false);
+          return;
+        }
         if (showAuthModal) {
           setShowAuthModal(false);
           return;
@@ -138,10 +148,8 @@ function App() {
 
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        if (viewState !== 'landing') {
-          handleBackToSearch();
-          setTimeout(() => searchBarRef.current?.focus(), 100);
-        }
+        // Open quick lookup modal instead of just focusing search
+        setShowQuickLookup(true);
       }
 
       if (e.key === '/' && !isInputFocused && (viewState === 'search' || viewState === 'results')) {
@@ -156,17 +164,17 @@ function App() {
 
       if (viewState === 'results' && searchData && !isInputFocused) {
         const results = getFilteredResults(searchData.results);
-        
+
         if (e.key === 'j' || e.key === 'ArrowDown') {
           e.preventDefault();
           setActiveResultIndex(prev => Math.min(prev + 1, results.length - 1));
         }
-        
+
         if (e.key === 'k' || e.key === 'ArrowUp') {
           e.preventDefault();
           setActiveResultIndex(prev => Math.max(prev - 1, 0));
         }
-        
+
         if (e.key === 'Enter' && activeResultIndex >= 0 && activeResultIndex < results.length) {
           e.preventDefault();
           const patent = results[activeResultIndex];
@@ -193,7 +201,7 @@ function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [viewState, searchData, activeResultIndex, showAuthModal, showKeyboardHelp, getFilteredResults]);
+  }, [viewState, searchData, activeResultIndex, showAuthModal, showKeyboardHelp, showQuickLookup, getFilteredResults]);
 
   const loadRecentSearches = async () => {
     const searches = await getSearchHistory(5);
@@ -209,11 +217,15 @@ function App() {
   };
 
   const loadPortfolios = async () => {
+    if (!user) {
+      setPortfolios([]);
+      return;
+    }
     try {
       const res = await listPortfolios();
       setPortfolios(res.portfolios || []);
     } catch {
-      // Silent fail for portfolios
+      setPortfolios([]);
     }
   };
 
@@ -231,9 +243,9 @@ function App() {
 
     try {
       const data = await searchPatents(query, page, sort) as SearchResponse;
-      
+
       if (currentRequestId !== searchRequestIdRef.current) return;
-      
+
       const elapsed = Math.round(performance.now() - searchStartTime.current);
       setSearchTime(elapsed);
 
@@ -323,7 +335,7 @@ function App() {
 
     try {
       const data = await analyzePatent(patentId) as Record<string, unknown>;
-      
+
       if (currentRequestId !== analysisRequestIdRef.current) return;
 
       if (data.error) {
@@ -354,9 +366,16 @@ function App() {
     try {
       await addToWatchlist(analysisData.patent_id as string, analysisData);
       updateToast(toastId, 'Patent added to watchlist', 'success');
-    } catch {
+    } catch (err) {
       setIsWatchlisted(false);
-      updateToast(toastId, 'Failed to add to watchlist', 'error');
+      const message = err instanceof Error ? err.message : 'Failed to add to watchlist';
+      // If auth error, show sign in prompt
+      if (message.toLowerCase().includes('sign in')) {
+        updateToast(toastId, 'Sign in to add patents to your watchlist', 'error');
+        setShowAuthModal(true);
+      } else {
+        updateToast(toastId, message, 'error');
+      }
     }
   };
 
@@ -366,9 +385,12 @@ function App() {
     const dates = analysisData.dates as Record<string, unknown>;
     const maintenanceFees = analysisData.maintenance_fees as Record<string, Record<string, string>> | undefined;
 
-    const data = {
+    // For JSON: export full data object
+    // For CSV: export flattened key fields
+    const csvData = {
       patent_id: analysisData.patent_id,
       title: analysisData.title,
+      abstract: (analysisData.abstract as string || '').substring(0, 500),
       filing_date: dates?.filed,
       grant_date: dates?.granted,
       expiration_date: dates?.calculated_expiry,
@@ -382,9 +404,14 @@ function App() {
       exported_at: new Date().toISOString(),
     };
 
+    const jsonData = {
+      ...analysisData,
+      exported_at: new Date().toISOString(),
+    };
+
     if (format === 'csv') {
-      const headers = Object.keys(data).join(',');
-      const values = Object.values(data).map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',');
+      const headers = Object.keys(csvData).join(',');
+      const values = Object.values(csvData).map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',');
       const csvContent = `${headers}\n${values}`;
       const blob = new Blob([csvContent], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
@@ -396,7 +423,7 @@ function App() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } else {
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -418,8 +445,15 @@ function App() {
     try {
       await addToPortfolio(portfolioId, analysisData.patent_id as string, analysisData.title as string);
       updateToast(toastId, 'Patent added to portfolio', 'success');
-    } catch {
-      updateToast(toastId, 'Failed to add to portfolio', 'error');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to add to portfolio';
+      // If auth error, show sign in prompt
+      if (message.toLowerCase().includes('sign in')) {
+        updateToast(toastId, 'Sign in to add patents to portfolios', 'error');
+        setShowAuthModal(true);
+      } else {
+        updateToast(toastId, message, 'error');
+      }
     }
   };
 
@@ -516,7 +550,7 @@ function App() {
   };
 
   if (viewState === 'landing') {
-    return <LandingPage onEnterApp={handleEnterApp} />;
+    return <LandingPage onEnterApp={handleEnterApp} onSearch={handleSearch} />;
   }
 
   return (
@@ -528,7 +562,7 @@ function App() {
               <Scale className="w-8 h-8 text-blue-600" />
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">PatentSentry</h1>
-                <p className="text-sm text-gray-600">USPTO PatentsView + Expiration Analysis</p>
+                <p className="text-sm text-gray-600">🇺🇸 US Patents Only • USPTO PatentsView</p>
               </div>
             </div>
             <div className="flex items-center gap-2 md:gap-4">
@@ -549,11 +583,10 @@ function App() {
                   }
                   setViewState('dashboard');
                 }}
-                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  viewState === 'dashboard'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                }`}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${viewState === 'dashboard'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  }`}
               >
                 <LayoutDashboard className="w-4 h-4" />
                 <span className="hidden sm:inline">Dashboard</span>
@@ -719,6 +752,15 @@ function App() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {searchData && searchData.results.length >= 5 && (
+                    <button
+                      onClick={() => setShowLandscape(true)}
+                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium text-sm"
+                    >
+                      <Map className="w-4 h-4" />
+                      Landscape Analysis
+                    </button>
+                  )}
                   {searchData && searchData.results.length > 0 && (
                     <button
                       onClick={handleExportSearchResults}
@@ -733,18 +775,45 @@ function App() {
               </div>
 
               {searchError && !loading && (
-                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                    <span className="text-red-800">{searchError}</span>
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-red-800 font-medium">{searchError}</p>
+
+                      {/* Auth hint */}
+                      {searchError.toLowerCase().includes('sign in') && (
+                        <p className="text-sm text-red-600 mt-2">
+                          You need to be signed in for this feature.
+                        </p>
+                      )}
+
+                      {/* Rate limit hint */}
+                      {(searchError.toLowerCase().includes('too many') || searchError.toLowerCase().includes('rate limit')) && (
+                        <p className="text-sm text-amber-600 mt-2">
+                          Please wait 30 seconds before trying again.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Show Sign In button for auth errors, Retry for others */}
+                    {searchError.toLowerCase().includes('sign in') ? (
+                      <button
+                        onClick={() => setShowAuthModal(true)}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700"
+                      >
+                        Sign In
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleRetrySearch}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        Retry
+                      </button>
+                    )}
                   </div>
-                  <button
-                    onClick={handleRetrySearch}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Retry
-                  </button>
                 </div>
               )}
 
@@ -758,22 +827,20 @@ function App() {
                     <button
                       onClick={() => handleSortChange('relevance')}
                       disabled={loading}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                        sortBy === 'relevance'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${sortBy === 'relevance'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
                     >
                       Relevance
                     </button>
                     <button
                       onClick={() => handleSortChange(sortBy === 'date_desc' ? 'date_asc' : 'date_desc')}
                       disabled={loading}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                        sortBy === 'date_desc' || sortBy === 'date_asc'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${sortBy === 'date_desc' || sortBy === 'date_asc'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
                     >
                       Date {sortBy === 'date_asc' ? '(Oldest)' : '(Newest)'}
                     </button>
@@ -847,11 +914,10 @@ function App() {
                     <button
                       onClick={() => setShowComparison(true)}
                       disabled={selectedPatents.length < 2}
-                      className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                        selectedPatents.length >= 2
-                          ? 'bg-blue-600 text-white hover:bg-blue-700'
-                          : 'bg-blue-200 text-blue-400 cursor-not-allowed'
-                      }`}
+                      className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${selectedPatents.length >= 2
+                        ? 'bg-blue-600 text-white hover:bg-blue-700'
+                        : 'bg-blue-200 text-blue-400 cursor-not-allowed'
+                        }`}
                     >
                       Compare
                     </button>
@@ -887,8 +953,11 @@ function App() {
                       {searchWithinResults
                         ? 'No patents match your filter.'
                         : dateFilter === 'all'
-                        ? 'No patents found. Try a different search term.'
-                        : 'No patents found in this date range.'}
+                          ? 'No US patents found. Try a different search term.'
+                          : 'No US patents found in this date range.'}
+                    </p>
+                    <p className="text-amber-600 text-sm mb-3">
+                      🇺🇸 Note: This app only searches US patents (USPTO). For international patents, try Google Patents.
                     </p>
                     {searchWithinResults && (
                       <button
@@ -906,11 +975,10 @@ function App() {
                     <button
                       onClick={handlePrevPage}
                       disabled={!searchData.has_prev || loading}
-                      className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
-                        searchData.has_prev && !loading
-                          ? 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
-                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      }`}
+                      className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${searchData.has_prev && !loading
+                        ? 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        }`}
                     >
                       <ChevronLeft className="w-5 h-5" />
                       Previous
@@ -921,11 +989,10 @@ function App() {
                     <button
                       onClick={handleNextPage}
                       disabled={!searchData.has_next || loading}
-                      className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${
-                        searchData.has_next && !loading
-                          ? 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
-                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                      }`}
+                      className={`flex items-center gap-2 px-6 py-3 rounded-lg font-medium transition-all ${searchData.has_next && !loading
+                        ? 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
+                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        }`}
                     >
                       Next
                       <ChevronRight className="w-5 h-5" />
@@ -964,7 +1031,22 @@ function App() {
               <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-8 text-center">
                 <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">Analysis Failed</h2>
-                <p className="text-gray-600 mb-6 max-w-md mx-auto">{analysisError}</p>
+                <p className="text-gray-600 mb-4 max-w-md mx-auto">{analysisError}</p>
+
+                {/* Auth hint */}
+                {analysisError.toLowerCase().includes('sign in') && (
+                  <p className="text-sm text-red-600 mb-4">
+                    You need to be signed in for this feature.
+                  </p>
+                )}
+
+                {/* Rate limit hint */}
+                {(analysisError.toLowerCase().includes('too many') || analysisError.toLowerCase().includes('rate limit')) && (
+                  <p className="text-sm text-amber-600 mb-4">
+                    Please wait 30 seconds before trying again.
+                  </p>
+                )}
+
                 <div className="flex justify-center gap-3">
                   <button
                     onClick={() => {
@@ -975,18 +1057,29 @@ function App() {
                   >
                     Back to Results
                   </button>
-                  <button
-                    onClick={() => {
-                      setAnalysisError(null);
-                      if (currentAnalysisPatentId) {
-                        handleAnalyze(currentAnalysisPatentId);
-                      }
-                    }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    Retry
-                  </button>
+
+                  {/* Show Sign In button for auth errors */}
+                  {analysisError.toLowerCase().includes('sign in') ? (
+                    <button
+                      onClick={() => setShowAuthModal(true)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                    >
+                      Sign In
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setAnalysisError(null);
+                        if (currentAnalysisPatentId) {
+                          handleAnalyze(currentAnalysisPatentId);
+                        }
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Retry
+                    </button>
+                  )}
                 </div>
               </div>
             ) : analysisData ? (
@@ -1014,11 +1107,12 @@ function App() {
         </button>
       )}
 
-      {showComparison && selectedPatents.length >= 2 && (
+      {showComparison && selectedPatents.length >= 1 && (
         <PatentComparison
           patents={selectedPatents as Array<{
             patent_id: string;
             patent_title: string;
+            patent_abstract: string;
             patent_date: string;
             filing_date?: string;
             expiration_date?: string;
@@ -1027,6 +1121,10 @@ function App() {
           }>}
           onClose={() => setShowComparison(false)}
           onRemove={handleRemoveFromComparison}
+          onClearAll={() => {
+            setSelectedPatents([]);
+            setShowComparison(false);
+          }}
           onAnalyze={handleAnalyze}
         />
       )}
@@ -1089,10 +1187,34 @@ function App() {
         </div>
       )}
 
+      {/* Quick Lookup Modal (Ctrl+K) */}
+      <QuickLookupModal
+        isOpen={showQuickLookup}
+        onClose={() => setShowQuickLookup(false)}
+        onAnalyze={handleAnalyze}
+      />
+
+      {showLandscape && searchData && (
+        <PatentLandscape
+          query={currentQuery}
+          patents={searchData.results.map(p => ({
+            patent_id: p.patent_id,
+            patent_title: p.patent_title,
+            patent_abstract: p.patent_abstract || '',
+            assignee: p.assignees?.[0]?.assignee_organization,
+            filing_date: p.patent_date,
+          }))}
+          onClose={() => setShowLandscape(false)}
+        />
+      )}
+
       <footer className="bg-white border-t border-gray-200 mt-16">
         <div className="max-w-7xl mx-auto px-6 py-6">
-          <p className="text-sm text-gray-600 text-center mb-3">
-            Powered by USPTO PatentsView API and Supabase
+          <p className="text-sm text-amber-700 text-center mb-2 font-medium">
+            🇺🇸 US Patents Only — Data from USPTO PatentsView API
+          </p>
+          <p className="text-xs text-gray-500 text-center mb-3">
+            For international patents (EPO, WIPO, JPO, etc.), use Google Patents
           </p>
           <div className="flex items-center justify-center gap-6 text-sm text-gray-600">
             <span>Built by <a href="https://github.com/bO-05" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-medium inline-flex items-center gap-1"><Github className="w-4 h-4" /> asynchronope</a></span>

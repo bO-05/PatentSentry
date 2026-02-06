@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Building2, TrendingUp, Package, ExternalLink, RefreshCw, AlertCircle, Newspaper } from 'lucide-react';
+import { useState } from 'react';
+import { Building2, TrendingUp, Package, ExternalLink, RefreshCw, AlertCircle, Newspaper, Globe } from 'lucide-react';
 import { getPatentEnrichment, EnrichmentResult, EnrichmentArticle } from '../lib/api';
 
 interface EnrichmentPanelProps {
@@ -10,7 +10,7 @@ interface EnrichmentPanelProps {
 
 function cleanDisplaySnippet(snippet: string): string {
   if (!snippet) return '';
-  
+
   return snippet
     // Clean any remaining markdown/navigation that slipped through
     .replace(/\[{1,2}[^\]]*\]{1,2}/g, '')
@@ -125,14 +125,10 @@ export default function EnrichmentPanel({ patentId, patentTitle, assignee }: Enr
   const [enrichment, setEnrichment] = useState<EnrichmentResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasStarted, setHasStarted] = useState(false);
 
-  useEffect(() => {
-    if (patentId && assignee) {
-      loadEnrichment(false);
-    }
-  }, [patentId, assignee]);
-
-  const loadEnrichment = async (forceRefresh: boolean) => {
+  const loadEnrichment = async (forceRefresh: boolean = false) => {
+    setHasStarted(true);
     if (!assignee) {
       setError('Assignee information required for business context');
       return;
@@ -159,9 +155,61 @@ export default function EnrichmentPanel({ patentId, patentTitle, assignee }: Enr
     }
   };
 
-  // Don't render if no assignee
+  // Ready state - user must click to fetch
+  if (!hasStarted) {
+    return (
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-orange-600 rounded-lg flex items-center justify-center">
+              <Globe className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">Business Context</h3>
+              <p className="text-sm text-gray-500">Company news & market intel</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6 text-center">
+          <Globe className="w-12 h-12 text-orange-300 mx-auto mb-3" />
+          <p className="text-gray-600 text-sm mb-4 max-w-sm mx-auto">
+            Get real-time company news, market context, and product mentions.
+          </p>
+          <button
+            onClick={() => loadEnrichment()}
+            className="px-5 py-2.5 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors font-medium text-sm"
+          >
+            Load Business Context
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Show informative message if no assignee - don't silently hide
   if (!assignee) {
-    return null;
+    return (
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-gray-100 rounded-lg">
+            <Newspaper className="w-5 h-5 text-gray-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Business Context</h3>
+            <p className="text-sm text-gray-500">Powered by Exa AI</p>
+          </div>
+        </div>
+        <div className="flex items-start gap-3 p-4 bg-gray-100 rounded-lg">
+          <Building2 className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm text-gray-600 font-medium">No company information available</p>
+            <p className="text-xs text-gray-500 mt-1">
+              This patent doesn't have an assignee (company) in its records. Business context search requires a company name to find relevant news and market information.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // Loading state (only show if no cached data)
@@ -185,8 +233,11 @@ export default function EnrichmentPanel({ patentId, patentTitle, assignee }: Enr
     );
   }
 
-  // Error state
+  // Error state - Enhanced with actionable CTAs
   if (error && !enrichment) {
+    const isRateLimit = error.toLowerCase().includes('too many') || error.toLowerCase().includes('rate limit');
+    const isAuthError = error.toLowerCase().includes('sign in');
+
     return (
       <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-4">
@@ -198,9 +249,36 @@ export default function EnrichmentPanel({ patentId, patentTitle, assignee }: Enr
             <p className="text-sm text-gray-500">Powered by Exa AI</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 text-amber-700 bg-amber-50 p-3 rounded-lg">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span className="text-sm">{error}</span>
+        <div className="flex items-start gap-2 text-amber-700 bg-amber-50 p-3 rounded-lg">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <span className="text-sm">{error}</span>
+
+            {/* Rate limit hint */}
+            {isRateLimit && (
+              <p className="text-xs text-amber-600 mt-1">
+                Please wait a moment before trying again.
+              </p>
+            )}
+
+            {/* Auth hint */}
+            {isAuthError && (
+              <p className="text-xs text-amber-600 mt-1">
+                Click <strong>Sign In</strong> in the top right to access this feature.
+              </p>
+            )}
+
+            {/* Retry button for non-auth errors */}
+            {!isAuthError && (
+              <button
+                onClick={() => loadEnrichment(true)}
+                className="inline-flex items-center gap-1.5 text-xs text-amber-700 hover:text-amber-800 mt-2 font-medium"
+              >
+                <RefreshCw className="w-3 h-3" />
+                Try again
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -224,7 +302,27 @@ export default function EnrichmentPanel({ patentId, patentTitle, assignee }: Enr
   }
 
   if (!enrichment) {
-    return null;
+    // Fallback state - shouldn't normally reach here, but provide user feedback
+    return (
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-gray-100 rounded-lg">
+            <Newspaper className="w-5 h-5 text-gray-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Business Context</h3>
+            <p className="text-sm text-gray-500">Powered by Exa AI</p>
+          </div>
+        </div>
+        <button
+          onClick={() => loadEnrichment(true)}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-50 text-blue-700 font-medium rounded-lg hover:bg-blue-100 transition-colors"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Load Business Context
+        </button>
+      </div>
+    );
   }
 
   const totalArticles =

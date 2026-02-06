@@ -1,23 +1,50 @@
 # PatentSentry
 
-A patent research and expiration tracking tool that goes beyond Google Patents. Get exact expiration dates, maintenance fee schedules, business context, and more.
+🤖 **Powered by Gemini 3** - AI-enhanced patent research and expiration tracking that goes beyond Google Patents. Get exact expiration dates, AI-powered claims analysis, maintenance fee schedules, business context, and more.
 
-**Built by [@asynchronope](https://github.com/bO-05) | [Twitter/X](https://x.com/asynchronope)**
+**Built for the Gemini 3 Hackathon by [@asynchronope](https://github.com/bO-05) | [Twitter/X](https://x.com/asynchronope)**
 
 ## Why PatentSentry vs Google Patents?
 
 | Feature | PatentSentry | Google Patents |
 |---------|---------------|----------------|
+| **AI Patent Analysis** | ✅ Gemini 3 multi-step pipeline | ❌ Not available |
+| **Claim Dependency Graph** | ✅ Visual claim structure | ❌ Not available |
+| **Prior Art Discovery** | ✅ AI autonomous agent | ❌ Manual search only |
+| **FTO Risk Analyzer** | ✅ Product vs patents analysis | ❌ Not available |
+| **Portfolio Valuation** | ✅ AI scoring & insights | ❌ Not available |
+| **Inventor Networks** | ✅ Collaboration graph | ❌ Not available |
+| **Patent Landscape** | ✅ Technology area analysis | ❌ Not available |
 | Expiration Calculation | ✅ Exact (PTA/PTE/TD) | ❌ Estimates only |
 | Maintenance Fee Schedule | ✅ 3.5/7.5/11.5 year windows | ❌ Not available |
 | Business Context | ✅ Company news, market intel | ❌ Not available |
 | Portfolio Management | ✅ Track & analyze groups | ❌ Not available |
-| Expiration Alerts | ✅ Watchlist with notifications | ❌ Not available |
-| Bulk Analysis | ✅ Analyze multiple patents | ❌ Not available |
 
 ## Features
 
-- **Smart Patent Search** - Search USPTO patents with AI-powered query expansion
+### 🤖 AI-Powered Analysis (Gemini 3 - Multi-Step Pipeline)
+
+**Core Analysis** (3-step Extract → Analyze → Synthesize):
+- **Claims Summarization** - Plain-language explanation of what the patent protects
+- **Technical Scope Assessment** - Understand the technology domain and coverage
+- **Key Innovations** - Identify the novel aspects of the patent
+- **FTO Considerations** - Freedom-to-operate risk indicators
+- **Competitive Landscape** - AI-generated competitive context
+
+**Advanced AI Features**:
+- **Claim Dependency Graph** - Visual tree showing independent/dependent claim relationships
+- **Prior Art Discovery Agent** - Autonomous multi-step agent that finds prior art candidates
+- **FTO Risk Analyzer** - Analyze your product description against selected patents for infringement risk
+- **AI Patent Comparison** - Compare 2-5 patents with overlap analysis and differentiation matrix
+- **Portfolio Valuation** - AI scoring of patent portfolios with strategic insights
+- **Patent Landscape Analysis** - Technology area overview with top assignees, clusters, and white spaces
+- **AI Query Expansion** - Gemini expands searches with synonyms, related terms, and CPC codes
+
+**Data Intelligence**:
+- **Inventor Network Graph** - Visualize collaboration patterns between inventors
+
+### 📊 Patent Intelligence
+- **Smart Patent Search** - Search USPTO patents with intelligent query matching
 - **Exact Expiration Dates** - Calculate with PTA/PTE adjustments and terminal disclaimers
 - **Maintenance Fee Tracking** - View upcoming 3.5, 7.5, and 11.5 year fee deadlines
 - **Business Context** *(Exa AI)* - Company news, market context, product mentions
@@ -27,7 +54,7 @@ A patent research and expiration tracking tool that goes beyond Google Patents. 
 - **Assignee Research** - Find other patents from the same assignee
 - **Export Options** - Download analysis as JSON or CSV
 - **User Authentication** - Supabase Auth with per-user data isolation
-- **Keyboard Navigation** - Power-user shortcuts (`j/k`, `/`, `?`, `Enter`, `x`)
+- **Keyboard Navigation** - Power-user shortcuts (`j/k`, `/`, `?`, `Enter`, `x`, `Ctrl+K`)
 
 ## Quick Start
 
@@ -52,6 +79,7 @@ npm run dev
    ```bash
    supabase secrets set PATENTSVIEW_API_KEY=your-key
    supabase secrets set EXA_API_KEY=your-key
+   supabase secrets set GEMINI_API_KEY=your-key
    ```
 
 3. Deploy:
@@ -61,11 +89,38 @@ npm run dev
 
 ## Tech Stack
 
+- **AI**: Google Gemini 3 (patent analysis, claims summarization)
 - **Frontend**: React 18, TypeScript, Vite, Tailwind CSS
 - **Backend**: Supabase Edge Functions (Deno)
 - **Database**: Supabase PostgreSQL
-- **APIs**: USPTO PatentsView, Exa AI
-- **Local Dev**: Optional FastAPI backend with Claude AI
+- **APIs**: USPTO PatentsView, Exa AI, Google Gemini API
+- **Local Dev**: Optional FastAPI backend
+
+## 🧠 Action Era Architecture
+
+PatentSentry implements **multi-step AI orchestration** aligned with the Gemini 3 Hackathon's [Action Era criteria](https://gemini3hackathon.devpost.com/):
+
+### 3-Step Analysis Pipeline
+
+Unlike single-prompt wrappers, PatentSentry chains **3 separate Gemini API calls** for each patent analysis:
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   STEP 1     │ ──▶ │   STEP 2     │ ──▶ │   STEP 3     │
+│   Extract    │     │   Analyze    │     │  Synthesize  │
+│              │     │              │     │              │
+│ • Domain     │     │ • FTO Risk   │     │ • Summary    │
+│ • Core claim │     │ • Threats    │     │ • Strategy   │
+│ • Keywords   │     │ • Scope      │     │ • Confidence │
+└──────────────┘     └──────────────┘     └──────────────┘
+```
+
+Each step builds on the previous output, demonstrating **chained reasoning** rather than simple prompt wrapping.
+
+### Additional Gemini Features
+- **AI Compare**: Multi-patent analysis with overlap detection
+- **Query Expansion**: Search term enrichment via Gemini
+- **Prefetch on Hover**: Background fetching for perceived speed
 
 ## Project Structure
 

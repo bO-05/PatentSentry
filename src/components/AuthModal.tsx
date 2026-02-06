@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { X, Mail, Lock, AlertCircle, Check } from 'lucide-react';
+import { X, Mail, Lock, AlertCircle, Check, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 
 type AuthMode = 'signin' | 'signup' | 'reset';
@@ -18,6 +18,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin', onS
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const emailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin', onS
       setPassword('');
       setError(null);
       setSuccess(null);
+      setShowPassword(false);
       setTimeout(() => emailRef.current?.focus(), 50);
     }
   }, [isOpen, initialMode]);
@@ -67,8 +69,11 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin', onS
         if (authError) {
           setError(authError.message);
         } else {
-          onSuccess?.();
-          onClose();
+          setSuccess('Signed in successfully!');
+          setTimeout(() => {
+            onSuccess?.();
+            onClose();
+          }, 800);
         }
       } else if (mode === 'signup') {
         const { error: authError } = await signUp(email, password);
@@ -156,14 +161,22 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'signin', onS
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   id="auth-password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder={mode === 'signup' ? 'At least 8 characters' : '••••••••'}
                   autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                   disabled={loading}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
             </div>
           )}

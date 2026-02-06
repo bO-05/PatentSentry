@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Eye, AlertTriangle, DollarSign, Clock, Trash2, RefreshCw, FolderPlus, Folder, BarChart3 } from 'lucide-react';
-import { getWatchlist, getExpiringSoon, removeFromWatchlist, listPortfolios, createPortfolio, analyzePortfolio, WatchedPatent, UpcomingFee, Portfolio, BulkAnalysisResult } from '../lib/api';
+import { Eye, AlertTriangle, DollarSign, Clock, Trash2, RefreshCw, FolderPlus, Folder, BarChart3, TrendingUp } from 'lucide-react';
+import { getWatchlist, getExpiringSoon, removeFromWatchlist, listPortfolios, createPortfolio, analyzePortfolio, getPortfolio, WatchedPatent, UpcomingFee, Portfolio, BulkAnalysisResult } from '../lib/api';
+import PortfolioValuation from './PortfolioValuation';
 
 interface DashboardProps {
   onAnalyzePatent: (patentId: string) => void;
@@ -21,6 +22,8 @@ export default function Dashboard({ onAnalyzePatent, onBack }: DashboardProps) {
   const [selectedPortfolio, setSelectedPortfolio] = useState<string | null>(null);
   const [portfolioAnalysis, setPortfolioAnalysis] = useState<BulkAnalysisResult | null>(null);
   const [analyzingPortfolio, setAnalyzingPortfolio] = useState(false);
+  const [valuatingPortfolio, setValuatingPortfolio] = useState<{id: string, name: string, patents: Array<{patent_id: string; patent_title: string; patent_abstract?: string; filing_date?: string; expiration_date?: string; assignee?: string}>} | null>(null);
+  const [loadingValuationPatents, setLoadingValuationPatents] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -83,6 +86,22 @@ export default function Dashboard({ onAnalyzePatent, onBack }: DashboardProps) {
     }
   };
 
+  const handleValueAnalysis = async (portfolio: Portfolio) => {
+    setLoadingValuationPatents(portfolio.id);
+    try {
+      const result = await getPortfolio(portfolio.id) as { portfolio: Portfolio; patents: Array<{patent_id: string; patent_title: string; patent_abstract?: string; filing_date?: string; expiration_date?: string; assignee?: string}> };
+      setValuatingPortfolio({
+        id: portfolio.id,
+        name: portfolio.name,
+        patents: result.patents || [],
+      });
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoadingValuationPatents(null);
+    }
+  };
+
   const parseLocalDate = (dateStr: string): Date => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
       const [year, month, day] = dateStr.split('-').map(Number);
@@ -142,8 +161,36 @@ export default function Dashboard({ onAnalyzePatent, onBack }: DashboardProps) {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
-          {error}
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-red-800 font-medium">{error}</p>
+
+              {/* Auth hint */}
+              {error.toLowerCase().includes('sign in') && (
+                <p className="text-sm text-red-600 mt-2">
+                  You need to be signed in to access the dashboard. Click <strong>Sign In</strong> in the top right.
+                </p>
+              )}
+
+              {/* Rate limit hint */}
+              {(error.toLowerCase().includes('too many') || error.toLowerCase().includes('rate limit')) && (
+                <p className="text-sm text-red-600 mt-2">
+                  Please wait 30 seconds before trying again.
+                </p>
+              )}
+
+              {/* Retry button */}
+              <button
+                onClick={() => { setError(null); loadData(); }}
+                className="inline-flex items-center gap-1.5 text-sm text-red-700 hover:text-red-800 mt-3 font-medium"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Try again
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -208,11 +255,10 @@ export default function Dashboard({ onAnalyzePatent, onBack }: DashboardProps) {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                className={`flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === tab.id
+                className={`flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-colors ${activeTab === tab.id
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
+                  }`}
               >
                 <tab.icon className="w-4 h-4" />
                 {tab.label}
@@ -426,18 +472,32 @@ export default function Dashboard({ onAnalyzePatent, onBack }: DashboardProps) {
                               )}
                               <p className="text-sm text-gray-500 mt-2">{patentCount} patents</p>
                             </div>
-                            <button
-                              onClick={() => handleAnalyzePortfolio(portfolio.id)}
-                              disabled={analyzingPortfolio || patentCount === 0}
-                              className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
-                            >
-                              {analyzingPortfolio && isSelected ? (
-                                <RefreshCw className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <BarChart3 className="w-4 h-4" />
-                              )}
-                              Analyze Portfolio
-                            </button>
+                            <div className="flex flex-col gap-2">
+                              <button
+                                onClick={() => handleAnalyzePortfolio(portfolio.id)}
+                                disabled={analyzingPortfolio || patentCount === 0}
+                                className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                              >
+                                {analyzingPortfolio && isSelected ? (
+                                  <RefreshCw className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <BarChart3 className="w-4 h-4" />
+                                )}
+                                Analyze Portfolio
+                              </button>
+                              <button
+                                onClick={() => handleValueAnalysis(portfolio)}
+                                disabled={loadingValuationPatents === portfolio.id || patentCount === 0}
+                                className="flex items-center gap-2 px-4 py-2 bg-purple-50 text-purple-700 text-sm font-medium rounded-lg hover:bg-purple-100 transition-colors disabled:opacity-50"
+                              >
+                                {loadingValuationPatents === portfolio.id ? (
+                                  <RefreshCw className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <TrendingUp className="w-4 h-4" />
+                                )}
+                                Value Analysis
+                              </button>
+                            </div>
                           </div>
                         </div>
 
@@ -477,6 +537,15 @@ export default function Dashboard({ onAnalyzePatent, onBack }: DashboardProps) {
           )}
         </div>
       </div>
+
+      {valuatingPortfolio && (
+        <PortfolioValuation
+          portfolioId={valuatingPortfolio.id}
+          portfolioName={valuatingPortfolio.name}
+          patents={valuatingPortfolio.patents}
+          onClose={() => setValuatingPortfolio(null)}
+        />
+      )}
     </div>
   );
 }

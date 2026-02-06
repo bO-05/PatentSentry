@@ -25,5 +25,8 @@ dist-ssr
 dok/*
 docs/*
 
+.agent/*
+.agents/*
+
 # Supabase local dev files
 supabase/.temp/

@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { Calendar, AlertTriangle, CheckCircle2, TrendingUp, Clock, FileText, DollarSign, ExternalLink, Eye, Download, FolderPlus, ChevronDown, Copy, Check, Quote, Tag } from 'lucide-react';
 import EnrichmentPanel from './EnrichmentPanel';
+import AIAnalysisPanel from './AIAnalysisPanel';
+import ClaimGraphPanel from './ClaimGraphPanel';
+import PriorArtPanel from './PriorArtPanel';
+import InventorNetworkPanel from './InventorNetworkPanel';
 
 interface Portfolio {
   id: string;
@@ -203,27 +207,25 @@ export default function PatentTimeline({ analysis, onAddToWatchlist, onExport, p
   const isExpiringSoon = daysUntilExpiry !== null && daysUntilExpiry > 0 && daysUntilExpiry <= 365;
 
   const HeaderSection = () => (
-    <div className={`px-6 py-4 border-b ${
-      isApplication ? 'bg-amber-50 border-amber-200' :
-      isExpired ? 'bg-red-50 border-red-200' :
-      isExpiringSoon ? 'bg-orange-50 border-orange-200' :
-      analysis.is_active ? 'bg-green-50 border-green-200' :
-      'bg-gray-50 border-gray-200'
-    }`}>
+    <div className={`px-6 py-4 border-b ${isApplication ? 'bg-amber-50 border-amber-200' :
+        isExpired ? 'bg-red-50 border-red-200' :
+          isExpiringSoon ? 'bg-orange-50 border-orange-200' :
+            analysis.is_active ? 'bg-green-50 border-green-200' :
+              'bg-gray-50 border-gray-200'
+      }`}>
       <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-2">
-            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-              isApplication ? 'bg-amber-100 text-amber-800' :
-              isExpired ? 'bg-red-100 text-red-800' :
-              isExpiringSoon ? 'bg-orange-100 text-orange-800' :
-              analysis.is_active ? 'bg-green-100 text-green-800' :
-              'bg-gray-100 text-gray-800'
-            }`}>
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${isApplication ? 'bg-amber-100 text-amber-800' :
+                isExpired ? 'bg-red-100 text-red-800' :
+                  isExpiringSoon ? 'bg-orange-100 text-orange-800' :
+                    analysis.is_active ? 'bg-green-100 text-green-800' :
+                      'bg-gray-100 text-gray-800'
+              }`}>
               {isApplication ? 'Pending Application' :
-               isExpired ? 'Expired' :
-               isExpiringSoon ? 'Expiring Soon' :
-               analysis.is_active ? 'Active' : 'Status Unknown'}
+                isExpired ? 'Expired' :
+                  isExpiringSoon ? 'Expiring Soon' :
+                    analysis.is_active ? 'Active' : 'Status Unknown'}
             </span>
             {analysis.from_cache && (
               <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded border border-gray-200" title={analysis.cached_at ? `Cached ${formatCacheTime(analysis.cached_at)}` : 'Cached result'}>
@@ -255,11 +257,10 @@ export default function PatentTimeline({ analysis, onAddToWatchlist, onExport, p
             <button
               onClick={onAddToWatchlist}
               disabled={isWatchlisted}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                isWatchlisted
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all ${isWatchlisted
                   ? 'bg-green-100 text-green-700 border border-green-300 cursor-default'
                   : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
-              }`}
+                }`}
             >
               {isWatchlisted ? (
                 <>
@@ -338,11 +339,10 @@ export default function PatentTimeline({ analysis, onAddToWatchlist, onExport, p
           )}
           <button
             onClick={handleCopyCitation}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${
-              copiedCitation
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg border transition-colors ${copiedCitation
                 ? 'bg-green-100 text-green-700 border-green-300'
                 : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-200'
-            }`}
+              }`}
             title="Copy citation"
           >
             {copiedCitation ? (
@@ -488,13 +488,11 @@ export default function PatentTimeline({ analysis, onAddToWatchlist, onExport, p
             </p>
           </div>
 
-          <div className={`rounded-lg p-4 ${
-            isExpired ? 'bg-red-50' : isExpiringSoon ? 'bg-orange-50' : 'bg-gray-50'
-          }`}>
+          <div className={`rounded-lg p-4 ${isExpired ? 'bg-red-50' : isExpiringSoon ? 'bg-orange-50' : 'bg-gray-50'
+            }`}>
             <div className={`flex items-center justify-between mb-1`}>
-              <div className={`flex items-center gap-2 ${
-                isExpired ? 'text-red-600' : isExpiringSoon ? 'text-orange-600' : 'text-gray-600'
-              }`}>
+              <div className={`flex items-center gap-2 ${isExpired ? 'text-red-600' : isExpiringSoon ? 'text-orange-600' : 'text-gray-600'
+                }`}>
                 <Clock className="w-4 h-4" />
                 <span className="text-sm font-medium">Expires</span>
               </div>
@@ -510,15 +508,13 @@ export default function PatentTimeline({ analysis, onAddToWatchlist, onExport, p
                 )}
               </button>
             </div>
-            <p className={`text-lg font-semibold ${
-              isExpired ? 'text-red-700' : isExpiringSoon ? 'text-orange-700' : 'text-gray-900'
-            }`}>
+            <p className={`text-lg font-semibold ${isExpired ? 'text-red-700' : isExpiringSoon ? 'text-orange-700' : 'text-gray-900'
+              }`}>
               {formatDate(analysis.dates.calculated_expiry)}
             </p>
             {daysUntilExpiry !== null && (
-              <p className={`text-xs mt-1 ${
-                isExpired ? 'text-red-600' : isExpiringSoon ? 'text-orange-600' : 'text-gray-600'
-              }`}>
+              <p className={`text-xs mt-1 ${isExpired ? 'text-red-600' : isExpiringSoon ? 'text-orange-600' : 'text-gray-600'
+                }`}>
                 {isExpired ? `Expired ${Math.abs(daysUntilExpiry)} days ago` : `${daysUntilExpiry} days remaining`}
               </p>
             )}
@@ -617,21 +613,19 @@ export default function PatentTimeline({ analysis, onAddToWatchlist, onExport, p
                 return (
                   <div
                     key={key}
-                    className={`bg-white border rounded-lg p-4 ${
-                      isPast ? 'border-gray-200 opacity-60' :
-                      status.status === 'surcharge' ? 'border-orange-300 bg-orange-50' :
-                      status.status === 'open' ? 'border-blue-300 bg-blue-50' :
-                      'border-gray-200'
-                    }`}
+                    className={`bg-white border rounded-lg p-4 ${isPast ? 'border-gray-200 opacity-60' :
+                        status.status === 'surcharge' ? 'border-orange-300 bg-orange-50' :
+                          status.status === 'open' ? 'border-blue-300 bg-blue-50' :
+                            'border-gray-200'
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-semibold text-gray-900">{label}</h4>
-                      <span className={`text-xs font-medium px-2 py-1 rounded ${
-                        isPast ? 'bg-gray-100 text-gray-600' :
-                        status.status === 'surcharge' ? 'bg-orange-100 text-orange-700' :
-                        status.status === 'open' ? 'bg-blue-100 text-blue-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>
+                      <span className={`text-xs font-medium px-2 py-1 rounded ${isPast ? 'bg-gray-100 text-gray-600' :
+                          status.status === 'surcharge' ? 'bg-orange-100 text-orange-700' :
+                            status.status === 'open' ? 'bg-blue-100 text-blue-700' :
+                              'bg-gray-100 text-gray-600'
+                        }`}>
                         {status.label}
                       </span>
                     </div>
@@ -703,6 +697,46 @@ export default function PatentTimeline({ analysis, onAddToWatchlist, onExport, p
           <div className="mb-6">
             <h4 className="text-sm font-semibold text-gray-700 mb-2">Abstract</h4>
             <p className="text-gray-700 text-sm leading-relaxed">{analysis.abstract}</p>
+          </div>
+        )}
+
+        {/* AI Patent Analysis - Powered by Gemini 3 */}
+        <div className="mb-6">
+          <AIAnalysisPanel
+            patentId={analysis.patent_id}
+            patentTitle={analysis.title}
+            patentAbstract={analysis.abstract || ''}
+            assignee={analysis.assignees?.[0]?.assignee_organization}
+            filingDate={analysis.dates.filed}
+            expirationDate={analysis.dates.calculated_expiry}
+          />
+        </div>
+
+        {/* Patent Claim Graph - AI Dependency Visualization */}
+        <div className="mb-6">
+          <ClaimGraphPanel
+            patentId={analysis.patent_id}
+            patentTitle={analysis.title}
+            patentAbstract={analysis.abstract || ''}
+          />
+        </div>
+
+        {/* Prior Art Discovery - AI Agent */}
+        <div className="mb-6">
+          <PriorArtPanel
+            patentId={analysis.patent_id}
+            patentTitle={analysis.title}
+            patentAbstract={analysis.abstract || ''}
+            filingDate={analysis.dates.filed}
+          />
+        </div>
+
+        {/* Inventor Network Analysis */}
+        {analysis.assignees?.[0]?.assignee_organization && (
+          <div className="mb-6">
+            <InventorNetworkPanel
+              assignee={analysis.assignees[0].assignee_organization}
+            />
           </div>
         )}
 
