@@ -162,7 +162,7 @@ Each step builds on the previous output, demonstrating **chained reasoning** rat
 |-----|--------|----------|
 | PatentsView | [Request here](https://patentsview-support.atlassian.net/servicedesk/customer/portal/1) | Yes |
 | Exa AI | [exa.ai](https://exa.ai/) | For enrichment |
-| Anthropic | [console.anthropic.com](https://console.anthropic.com/) | Local dev only |
+| Gemini | [Google AI Studio](https://aistudio.google.com/) | For AI analysis |
 
 ## Security Notes
 
