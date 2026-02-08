@@ -90,9 +90,8 @@ CREATE TABLE IF NOT EXISTS patent_analysis_cache (
 
 ALTER TABLE patent_analysis_cache ENABLE ROW LEVEL SECURITY;
 
+-- Read-only for anon; writes handled by service_role (bypasses RLS)
 CREATE POLICY "Allow public read on patent_analysis_cache" ON patent_analysis_cache FOR SELECT TO anon USING (true);
-CREATE POLICY "Allow public insert on patent_analysis_cache" ON patent_analysis_cache FOR INSERT TO anon WITH CHECK (true);
-CREATE POLICY "Allow public update on patent_analysis_cache" ON patent_analysis_cache FOR UPDATE TO anon USING (true) WITH CHECK (true);
 CREATE INDEX IF NOT EXISTS idx_patent_cache_patent_id ON patent_analysis_cache(patent_id);
 CREATE INDEX IF NOT EXISTS idx_patent_cache_expires ON patent_analysis_cache(expires_at);
 CREATE INDEX IF NOT EXISTS idx_patent_analysis_cache_fetched_at ON patent_analysis_cache(fetched_at);
@@ -144,18 +143,22 @@ CREATE TABLE IF NOT EXISTS patent_enrichments (
 
 ALTER TABLE patent_enrichments ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow service role full access on patent_enrichments" ON patent_enrichments FOR ALL USING (true) WITH CHECK (true);
+-- No permissive policies; service_role bypasses RLS automatically
 CREATE INDEX IF NOT EXISTS idx_patent_enrichments_expires ON patent_enrichments(patent_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_patent_enrichments_expires_only ON patent_enrichments(expires_at);
 
--- 8. Utility Function for updated_at
+-- 8. Utility Function for updated_at (with secure search_path)
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = public
+AS $$
 BEGIN
-  NEW.updated_at = now();
+  NEW.updated_at = NOW();
   RETURN NEW;
 END;
-$$ language 'plpgsql';
+$$;
 
 DROP TRIGGER IF EXISTS update_watched_patents_updated_at ON watched_patents;
 CREATE TRIGGER update_watched_patents_updated_at

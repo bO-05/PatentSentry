@@ -2,7 +2,7 @@
 
 🤖 **Powered by Gemini 3** - AI-enhanced patent research and expiration tracking that goes beyond Google Patents. Get exact expiration dates, AI-powered claims analysis, maintenance fee schedules, business context, and more.
 
-**Built for the Gemini 3 Hackathon by [@asynchronope](https://github.com/bO-05) | [Twitter/X](https://x.com/asynchronope)**
+**Built for the Gemini 3 Hackathon by Adam - [@asynchronope](https://github.com/bO-05) | [Twitter/X](https://x.com/asynchronope)**
 
 ## Why PatentSentry vs Google Patents?
 
@@ -106,7 +106,7 @@ Unlike single-prompt wrappers, PatentSentry chains **3 separate Gemini API calls
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│   STEP 1     │ ──▶ │   STEP 2     │ ──▶ │   STEP 3     │
+│   STEP 1     │ ──> │   STEP 2     │ ──> │   STEP 3     │
 │   Extract    │     │   Analyze    │     │  Synthesize  │
 │              │     │              │     │              │
 │ • Domain     │     │ • FTO Risk   │     │ • Summary    │
@@ -182,4 +182,4 @@ MIT
 
 ---
 
-**Made by [asynchronope](https://github.com/bO-05)**
+**Made by Adam - [asynchronope](https://github.com/bO-05)**

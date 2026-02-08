@@ -33,10 +33,12 @@ cd backend && pip install -r requirements.txt && python ps.py
 ## API Keys
 
 | Key | Service | Purpose |
-|-----|---------|---------|
+|-----|---------|---------| 
 | `PATENTSVIEW_API_KEY` | USPTO PatentsView | Patent data (required) |
 | `EXA_API_KEY` | Exa AI | Business context (optional) |
-| `ANTHROPIC_API_KEY` | Claude | AI query expansion (optional, local only) |
+| `GEMINI_API_KEY` | Google Gemini 3 | AI analysis, query expansion (required for production) |
+| `FIRECRAWL_API_KEY_1-7` | Firecrawl | Patent content scraping (optional, supports round-robin) |
+
 
 ## Key Features
 
